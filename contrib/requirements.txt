@@ -1,0 +1,21 @@
+# Contrib/POC Requirements
+# Additional dependencies for testing server and debug utilities
+
+# Core dependencies
+numpy>=1.24.0
+torch>=2.0.0
+silero-vad>=5.0
+resemblyzer>=0.1.3
+
+# WebSocket server
+websockets>=12.0
+
+# Audio file I/O (for debug recording)
+soundfile>=0.12.0
+
+# Config with env var support
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# CLI
+typer>=0.9.0
