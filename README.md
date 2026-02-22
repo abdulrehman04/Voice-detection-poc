@@ -4,10 +4,10 @@
 
 # Demo
 
-## Part 1
+## Video 1
 [![Watch Part 1 Demo](https://img.youtube.com/vi/qdySe0pWQ7U/0.jpg)](https://www.youtube.com/watch?v=qdySe0pWQ7U)
 
-## Part 2
+## Video 2
 [![Watch Part 2 Demo](https://img.youtube.com/vi/ajjEWj6icEI/0.jpg)](https://youtu.be/ajjEWj6icEI)
 
 ---
