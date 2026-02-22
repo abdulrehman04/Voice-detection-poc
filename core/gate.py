@@ -1,26 +1,8 @@
 """
-Speaker Gate - Real-time speaker verification with event-driven API.
+Speaker Gate — real-time speaker verification state machine.
 
-This is the main SDK interface for speaker verification.
-Feed audio chunks and receive events for speech detection,
-user verification, and completed segments.
-
-Example:
-    from poc.server.core import SpeakerGate, GateConfig, Event
-    
-    # Load profile embedding from your storage
-    embedding = load_profile_embedding(user_id)
-    
-    # Create gate
-    gate = SpeakerGate(embedding, threshold=0.72)
-    
-    # Subscribe to events
-    gate.on(Event.SEGMENT_COMPLETE, lambda e: send_to_stt(e.audio))
-    gate.on(Event.USER_STARTED, lambda e: show_indicator("speaking"))
-    
-    # Feed audio from your streaming source
-    async for chunk in audio_stream:
-        gate.feed(chunk)
+Feed audio chunks via gate.feed(), receive events for speech detection,
+speaker verification, and completed segments.
 """
 import collections
 import logging
@@ -65,6 +47,8 @@ class _Context:
     matches: int = 0
     mismatches: int = 0
     last_sim: float = 0.0
+    best_speech_sim: float = 0.0  # Peak similarity during active speech
+    last_best_session: int = 0  # 1-indexed best matching session (0=unknown)
     sim_history: list = field(default_factory=list)  # Last N similarity scores
     last_user_end: Optional[float] = None
     
@@ -84,25 +68,7 @@ class _SegmentResult:
 
 
 class SpeakerGate:
-    """
-    Real-time speaker verification gate.
-    
-    Processes audio chunks and emits events for:
-    - Speech detection (VAD)
-    - Speaker verification (optional)
-    - Completed verified segments
-    
-    Can operate in two modes:
-    - **Verification mode**: Requires profile_embedding, verifies speaker identity
-    - **VAD-only mode**: No profile, outputs all detected speech segments
-    
-    Attributes:
-        state: Current gate state
-        similarity: Last computed similarity score
-        vad_probability: Last VAD probability
-        vad_only: Whether running in VAD-only mode (no speaker verification)
-        verification_enabled: Whether speaker verification is active
-    """
+    """Real-time speaker verification gate with VAD-only fallback."""
     
     def __init__(
         self,
@@ -111,31 +77,25 @@ class SpeakerGate:
         config: Optional[GateConfig] = None,
         models: Optional[Models] = None,
     ):
-        """
-        Initialize speaker gate.
-        
-        Args:
-            profile_embedding: Reference embedding for enrolled user (256-dim).
-                              If None, operates in VAD-only mode.
-            threshold: Similarity threshold (default from config)
-            config: Gate configuration
-            models: ML models container
-        """
         self._config = config or GateConfig()
         self._profile: Optional[np.ndarray] = None
+        self._profile_refs: list[np.ndarray] = []  # Multi-session references
+        self._profile_thresholds: list[float] = []  # Per-session thresholds
         self._verification_enabled = True
         if profile_embedding is not None:
             self._profile = np.asarray(profile_embedding, dtype=np.float32)
+            self._profile_refs = [self._profile]
         self._models = models or Models.get()
-        
+
         # Processors
         self._vad = VADProcessor(self._config, self._models)
         self._emb = EmbeddingProcessor(self._config, self._models)
         self._silence_detector = AdaptiveSilenceDetector(self._config)
-        
+
         # Thresholds
         self._sim_enter = threshold or self._config.default_threshold
         self._sim_exit = self._sim_enter - self._config.sim_hysteresis
+        self._profile_thresholds = [self._sim_enter]
         
         # Buffers
         pre_samples = int(self._config.pre_buffer_sec * self._config.sample_rate)
@@ -161,25 +121,14 @@ class SpeakerGate:
     
     @property
     def vad_only(self) -> bool:
-        """Whether running in VAD-only mode (no speaker verification)."""
         return self._profile is None or not self._verification_enabled
-    
+
     @property
     def verification_enabled(self) -> bool:
-        """Whether speaker verification is enabled.
-        
-        When False, all detected speech is treated as verified user speech.
-        Requires a profile to be set to have any effect.
-        """
         return self._verification_enabled and self._profile is not None
-    
+
     @verification_enabled.setter
     def verification_enabled(self, value: bool) -> None:
-        """Enable or disable speaker verification.
-        
-        Args:
-            value: True to enable verification, False for VAD-only mode
-        """
         self._verification_enabled = value
         if not value:
             log.debug("Speaker verification disabled - VAD-only mode")
@@ -190,84 +139,74 @@ class SpeakerGate:
         self,
         embedding: Optional[np.ndarray],
         threshold: Optional[float] = None,
+        session_embeddings: Optional[list[np.ndarray]] = None,
+        session_thresholds: Optional[list[float]] = None,
     ) -> None:
-        """Set or clear the speaker profile.
-        
-        Use this to:
-        - Switch to a different user's profile
-        - Enable verification after starting in VAD-only mode  
-        - Clear profile to switch to VAD-only mode
-        
-        Args:
-            embedding: Profile embedding (256-dim), or None to clear
-            threshold: Optional new threshold (keeps current if not specified)
-        """
+        """Set or clear the speaker profile. Pass None to switch to VAD-only."""
         if embedding is None:
             self._profile = None
+            self._profile_refs = []
+            self._profile_thresholds = []
             log.debug("Profile cleared - VAD-only mode")
         else:
             self._profile = np.asarray(embedding, dtype=np.float32)
+            if session_embeddings:
+                self._profile_refs = [np.asarray(e, dtype=np.float32) for e in session_embeddings]
+            else:
+                self._profile_refs = [self._profile]
             if threshold is not None:
                 self._sim_enter = threshold
                 self._sim_exit = threshold - self._config.sim_hysteresis
-            log.debug(f"Profile set, threshold={self._sim_enter:.3f}")
+            if session_thresholds and len(session_thresholds) == len(self._profile_refs):
+                self._profile_thresholds = session_thresholds
+            else:
+                self._profile_thresholds = [self._sim_enter] * len(self._profile_refs)
+            log.debug(f"Profile set, threshold={self._sim_enter:.3f}, refs={len(self._profile_refs)}, per_session={self._profile_thresholds}")
 
     @property
     def similarity(self) -> float:
-        """Last computed similarity score."""
         return self._ctx.last_sim
-    
+
     @property
     def vad_probability(self) -> float:
-        """Last VAD probability."""
         return self._vad.last_probability
-    
+
+    @property
+    def last_best_session(self) -> int:
+        return self._ctx.last_best_session
+
+    @property
+    def num_sessions(self) -> int:
+        return len(self._profile_refs)
+
+    @property
+    def threshold(self) -> float:
+        return self._sim_enter
+
     @property
     def config(self) -> GateConfig:
-        """Gate configuration (read-only access)."""
         return self._config
-    
+
     @property
     def adaptive_silence_timeout(self) -> float:
-        """Current adaptive silence timeout in seconds."""
         return self._silence_detector.get_timeout()
-    
+
     @property
     def silence_detector_adapted(self) -> bool:
-        """Whether silence detector has adapted to speaker's tempo."""
         return self._silence_detector.is_adapted
     
     def on(self, event: Event, handler: EventHandler) -> Callable[[], None]:
-        """
-        Subscribe to an event.
-        
-        Args:
-            event: Event type
-            handler: Callback function
-            
-        Returns:
-            Unsubscribe function
-        """
+        """Subscribe to event. Returns unsubscribe function."""
         return self._events.on(event, handler)
-    
+
     def once(self, event: Event, handler: EventHandler):
-        """Subscribe to an event (one-time)."""
         self._events.once(event, handler)
-    
+
     def off(self, event: Event, handler: Optional[EventHandler] = None):
-        """Unsubscribe from an event."""
         self._events.off(event, handler)
     
     def feed(self, audio: np.ndarray) -> None:
-        """
-        Feed audio data for processing.
-        
-        Accepts any length of audio data. Internally splits into
-        chunk_size pieces for processing.
-        
-        Args:
-            audio: Audio samples (float32, mono, 16kHz)
-        """
+        """Feed audio data for processing. Splits into chunk_size pieces internally."""
         chunk_size = self._config.chunk_size
         offset = 0
         
@@ -280,7 +219,6 @@ class SpeakerGate:
             self._process_chunk(audio[offset:])
     
     def reset(self):
-        """Reset gate to initial state."""
         self._pre_buffer.clear()
         self._pending_buffer.clear()
         
@@ -292,7 +230,7 @@ class SpeakerGate:
         self._ctx.last_confirmed = last_confirmed
         
         self._vad.reset()
-        self._silence_detector.reset()  # Reset per-utterance state, keep gap history
+        self._silence_detector.reset()
     
     # ─────────────────────────────────────────────────────────────────
     # Internal processing
@@ -377,32 +315,41 @@ class SpeakerGate:
         speech_dur = now - self._ctx.speech_start if self._ctx.speech_start else 0
         time_since_user = (now - self._ctx.last_user_end) if self._ctx.last_user_end else float('inf')
         
-        # VAD-only mode: skip verification, immediately confirm as user
         if self.vad_only:
             self._ctx.state = GateState.USER
             self._ctx.last_confirmed = "USER"
             self._ctx.user_confirmed_at = now
             return None
         
-        # Use adaptive silence timeout based on speaker's tempo
         silence_timeout = self._silence_detector.get_timeout()
         if self._ctx.silence_dur > silence_timeout:
-            # Short utterance auto-approval - "yes" case
-            # If user recently spoke, approve short responses without embedding check
+            # Short utterance auto-approval (e.g. "yes" right after confirmed speech)
             is_recent_user = self._ctx.last_confirmed == "USER" and time_since_user < cfg.embed_suffix_sec
             is_short_utterance = speech_dur < cfg.short_utterance_sec
             
             if is_short_utterance and is_recent_user:
-                log.debug(f"Short utterance ({speech_dur:.2f}s) auto-approved (recent user {time_since_user:.1f}s ago)")
+                # Use best score from active speech (tail audio is diluted with silence)
+                sim = self._ctx.best_speech_sim if self._ctx.best_speech_sim > 0 else self._check_similarity()
+                if sim is not None and sim > 0 and sim < self._sim_exit:
+                    log.debug(f"Short utterance rejected: sim={sim:.3f} < exit={self._sim_exit:.3f}")
+                    if self._ctx.speech_dur >= cfg.pending_grace_sec:
+                        self._ctx.state = GateState.UNKNOWN
+                        self._ctx.segment = []
+                        self._ctx.last_confirmed = "OTHER"
+                    else:
+                        self._ctx.state = GateState.UNKNOWN
+                        self._ctx.segment = []
+                    return None
+                log.debug(f"Short utterance ({speech_dur:.2f}s) approved (recent user {time_since_user:.1f}s ago, sim={sim})")
                 self._ctx.state = GateState.TRAILING
                 self._ctx.last_confirmed = "USER"
                 self._ctx.user_confirmed_at = now
                 self._ctx.speech_ended_at = now
                 return None
             
-            # Final similarity check with lower threshold for short utterances
-            sim = self._check_similarity()
-            threshold = self._sim_enter if not is_recent_user else self._sim_exit  # Lower bar if recent user
+            # Use best score from active speech (tail audio is diluted with silence)
+            sim = self._ctx.best_speech_sim if self._ctx.best_speech_sim > 0 else self._check_similarity()
+            threshold = self._sim_enter if not is_recent_user else self._sim_exit
             if sim is not None and sim > threshold:
                 log.debug(f"Final check passed: sim={sim:.3f} > {threshold:.3f}")
                 self._include_prefix_buffer(cfg)
@@ -412,7 +359,6 @@ class SpeakerGate:
                 self._ctx.speech_ended_at = now
                 return None
             
-            # Reject if enough speech
             if self._ctx.speech_dur >= cfg.pending_grace_sec:
                 log.debug(f"Rejected: speech_dur={self._ctx.speech_dur:.2f}s, sim={sim}")
                 self._ctx.state = GateState.UNKNOWN
@@ -423,12 +369,13 @@ class SpeakerGate:
                 self._ctx.segment = []
             return None
         
-        # Periodic similarity check
-        if self._should_embed(now):
+        # Skip similarity checks during silence — tail audio is diluted with silence
+        # and produces garbage scores that poison counters and history
+        if self._should_embed(now) and self._ctx.silence_dur < 0.3:
             sim = self._check_similarity()
             if sim is not None:
                 self._update_counters(sim)
-                
+
                 # Emit similarity update
                 self._events.emit(Event.SIMILARITY_UPDATE, SimilarityEvent(
                     timestamp=now,
@@ -436,18 +383,15 @@ class SpeakerGate:
                     threshold=self._sim_enter,
                     is_match=sim > self._sim_enter,
                 ))
-                
-                if self._ctx.matches >= cfg.enter_count:
-                    # User confirmed - include historical audio from pending buffer
-                    self._include_prefix_buffer(cfg)
 
+                if self._ctx.matches >= cfg.enter_count:
+                    self._include_prefix_buffer(cfg)
                     self._ctx.state = GateState.USER
                     self._ctx.last_confirmed = "USER"
                     self._ctx.user_confirmed_at = now
                     return None
 
-                # Fallback: if 3+ checks average above threshold, confirm
-                # Handles case where no single check passes but scores are consistently close
+                # Accumulation fallback: 3+ checks averaging above threshold
                 hist = self._ctx.sim_history
                 if len(hist) >= 3 and sum(hist[-3:]) / 3 > self._sim_enter:
                     avg = sum(hist[-3:]) / 3
@@ -466,19 +410,11 @@ class SpeakerGate:
         return None
     
     def _include_prefix_buffer(self, cfg: GateConfig):
-        """Include historical audio from pending buffer when user is confirmed.
-        
-        This handles the case where initial chunks weren't recognized as user
-        (e.g., low similarity at start). We keep embed_prefix_sec of audio
-        and prepend any portion not already in segment.
-        """
+        """Prepend buffered audio from before user was confirmed."""
         pending_list = list(self._pending_buffer)
         segment_len = len(self._ctx.segment)
         pending_len = len(pending_list)
-        
-        # Calculate how much prefix audio we can add
-        # pending_buffer has last embed_prefix_sec of ALL audio
-        # segment has audio since speech start
+
         if pending_len > segment_len:
             prefix_samples = min(
                 pending_len - segment_len,  # Available prefix
@@ -493,36 +429,31 @@ class SpeakerGate:
         cfg = self._config
         self._ctx.segment.extend(chunk)
         seg_dur = len(self._ctx.segment) / cfg.sample_rate
-        
-        # Use adaptive silence timeout based on speaker's tempo
+
         silence_timeout = self._silence_detector.get_timeout()
-        
-        # Check for end conditions
+
         if seg_dur > cfg.max_segment_sec or self._ctx.silence_dur > silence_timeout:
             self._ctx.state = GateState.TRAILING
             self._ctx.post_buffer = list(chunk)
             self._ctx.speech_ended_at = now
             return None
         
-        # Skip similarity checks in VAD-only mode
         if self.vad_only:
             return None
         
-        # More frequent embedding checks during active speech to catch speaker change
-        if self._should_embed(now):
+        # Skip checks during silence — prevents false speaker-change from degraded scores
+        if self._should_embed(now) and self._ctx.silence_dur < 0.3:
             sim = self._check_similarity()
             if sim is not None:
                 self._update_counters(sim)
-                
+
                 self._events.emit(Event.SIMILARITY_UPDATE, SimilarityEvent(
                     timestamp=now,
                     similarity=sim,
                     threshold=self._sim_exit,
                     is_match=sim > self._sim_exit,
                 ))
-                
-                # If we get consecutive mismatches, end the segment
-                # This handles TV/other speaker taking over
+
                 if self._ctx.mismatches >= cfg.exit_count:
                     log.debug(f"Speaker change detected: sim={sim:.3f} < exit={self._sim_exit:.3f}")
                     self._ctx.state = GateState.TRAILING
@@ -535,8 +466,7 @@ class SpeakerGate:
         self._ctx.post_buffer.extend(chunk)
         self._ctx.segment.extend(chunk)
         
-        # Resume if speech resumes quickly AND it's likely still the user
-        # Covers natural breathing pauses (0.3-0.5s) and inter-sentence gaps
+        # Resume on short pauses (breathing, inter-sentence gaps)
         silence_timeout = self._silence_detector.get_timeout()
         resume_limit = max(0.3, min(cfg.trailing_resume_max, silence_timeout * 0.6))
         if is_speech and self._ctx.silence_dur < resume_limit:
@@ -545,15 +475,9 @@ class SpeakerGate:
             return None
         
         post_dur = len(self._ctx.post_buffer) / cfg.sample_rate
-        
-        # Use adaptive silence timeout based on speaker's tempo
         silence_timeout = self._silence_detector.get_timeout()
-        
-        # Complete segment faster:
-        # - If we've collected post_buffer_sec of trailing audio, OR
-        # - If silence exceeds timeout (don't wait for 2x anymore)
+
         if post_dur >= cfg.post_buffer_sec or self._ctx.silence_dur > silence_timeout:
-            # Segment complete
             seg_data = np.array(self._ctx.segment, dtype=np.float32)
             seg_result = _SegmentResult(
                 data=seg_data,
@@ -564,9 +488,13 @@ class SpeakerGate:
             
             self._ctx.last_user_end = now
             last_user_end = self._ctx.last_user_end
+            last_sim = self._ctx.last_sim
+            last_best_session = self._ctx.last_best_session
             self.reset()
             self._ctx.last_user_end = last_user_end
             self._ctx.last_confirmed = "USER"
+            self._ctx.last_sim = last_sim
+            self._ctx.last_best_session = last_best_session
             
             return seg_result
         
@@ -580,7 +508,6 @@ class SpeakerGate:
     }
     
     def _should_embed(self, now: float) -> bool:
-        # Skip embedding checks if no profile or verification disabled
         if self.vad_only:
             return False
         return (len(self._ctx.segment) >= self._embed_samples and 
@@ -590,21 +517,49 @@ class SpeakerGate:
         if self._profile is None:
             return None
         audio = np.array(self._ctx.segment[-self._embed_samples:], dtype=np.float32)
-        sim = self._emb.similarity(audio, self._profile)
+
+        # Multi-session: compare against all refs, use best match's threshold
+        if len(self._profile_refs) > 1:
+            emb = self._emb.embed(audio)
+            if emb is None:
+                return None
+            sims = [float(np.inner(emb, ref)) for ref in self._profile_refs]
+            best_idx = max(range(len(sims)), key=lambda i: sims[i])
+            sim = sims[best_idx]
+
+            # Switch to best-matching session's threshold
+            if self._profile_thresholds and best_idx < len(self._profile_thresholds):
+                self._sim_enter = self._profile_thresholds[best_idx]
+                self._sim_exit = self._sim_enter - self._config.sim_hysteresis
+            self._ctx.last_best_session = best_idx + 1  # 1-indexed
+            log.debug(
+                f"Similarity check: best_session={best_idx+1}/{len(self._profile_refs)}, "
+                f"sim={sim:.3f}, sims={[f'{s:.3f}' for s in sims]}, "
+                f"threshold={self._sim_enter:.3f}"
+            )
+        else:
+            sim = self._emb.similarity(audio, self._profile)
+            self._ctx.last_best_session = 1
+            if sim is not None:
+                log.debug(f"Similarity check: sim={sim:.3f}, threshold={self._sim_enter:.3f}")
+
         if sim is not None:
             self._ctx.last_sim = sim
             self._ctx.last_embed_time = time.time()
+            if sim > self._ctx.best_speech_sim:
+                self._ctx.best_speech_sim = sim
         return sim
     
     def _update_counters(self, sim: float):
-        # Track history (keep last 5)
+        # Rolling history (last 5) for accumulation fallback
         self._ctx.sim_history.append(sim)
         if len(self._ctx.sim_history) > 5:
             self._ctx.sim_history.pop(0)
 
+        # Decay counters instead of hard reset for smoother transitions
         if sim > self._sim_enter:
             self._ctx.matches += 1
-            self._ctx.mismatches = max(0, self._ctx.mismatches - 1)  # Decay instead of hard reset
+            self._ctx.mismatches = max(0, self._ctx.mismatches - 1)
         elif sim < self._sim_exit:
             self._ctx.mismatches += 1
-            self._ctx.matches = max(0, self._ctx.matches - 1)  # Decay instead of hard reset
+            self._ctx.matches = max(0, self._ctx.matches - 1)

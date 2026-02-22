@@ -1,9 +1,4 @@
-"""
-Speaker profile management for Speaker Gate SDK.
-
-Provides Profile model and abstract storage interface.
-Includes a simple file-based implementation for standalone use.
-"""
+"""Speaker profile management — model, storage interface, and file-based store."""
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -21,43 +16,49 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class Profile:
-    """
-    Speaker profile with embedding and threshold.
-    
-    Attributes:
-        profile_id: Unique identifier
-        embedding: 256-dim voice embedding as list
-        threshold: Similarity threshold for this speaker
-        consistency_score: Enrollment audio consistency
-        duration_sec: Enrollment audio duration
-        created_at: Profile creation timestamp
-    """
+    """Speaker profile with embedding and threshold."""
     profile_id: str
     embedding: List[float]
     threshold: float
     consistency_score: float = 0.0
     duration_sec: float = 0.0
     created_at: Optional[str] = None  # ISO format string
-    
+    session_embeddings: Optional[List[List[float]]] = None  # Per-session reference embeddings
+    session_thresholds: Optional[List[float]] = None  # Per-session similarity thresholds
+
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = datetime.now().isoformat()
-        
+
         if len(self.embedding) != 256:
             raise ValueError(f"Expected 256-dim embedding, got {len(self.embedding)}")
-    
+
+        if self.session_embeddings is not None:
+            for i, emb in enumerate(self.session_embeddings):
+                if len(emb) != 256:
+                    raise ValueError(f"Session embedding {i}: expected 256-dim, got {len(emb)}")
+
     @property
     def embedding_array(self) -> np.ndarray:
-        """Get embedding as numpy array."""
         return np.array(self.embedding, dtype=np.float32)
+
+    @property
+    def session_embedding_arrays(self) -> List[np.ndarray]:
+        """All session embeddings as arrays. Falls back to primary embedding."""
+        if self.session_embeddings:
+            return [np.array(e, dtype=np.float32) for e in self.session_embeddings]
+        return [self.embedding_array]
     
     def to_dict(self) -> dict:
-        """Serialize to dictionary."""
         return asdict(self)
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "Profile":
-        """Deserialize from dictionary."""
+        # Backward compat
+        if "session_embeddings" not in data:
+            data["session_embeddings"] = None
+        if "session_thresholds" not in data:
+            data["session_thresholds"] = None
         return cls(**data)
     
     def to_json(self) -> str:
@@ -71,71 +72,35 @@ class Profile:
 
 
 class ProfileStore(ABC):
-    """
-    Abstract profile storage interface.
-    
-    Implement this to integrate with your existing storage
-    (database, Redis, cloud storage, etc.)
-    """
+    """Abstract profile storage. Implement for your backend (DB, Redis, etc.)."""
     
     @abstractmethod
-    def save(self, profile: Profile) -> None:
-        """Save profile to storage."""
-        ...
-    
+    def save(self, profile: Profile) -> None: ...
+
     @abstractmethod
-    def load(self, profile_id: str) -> Optional[Profile]:
-        """Load profile from storage, return None if not found."""
-        ...
-    
+    def load(self, profile_id: str) -> Optional[Profile]: ...
+
     @abstractmethod
-    def delete(self, profile_id: str) -> bool:
-        """Delete profile, return True if existed."""
-        ...
-    
+    def delete(self, profile_id: str) -> bool: ...
+
     @abstractmethod
-    def list_ids(self) -> List[str]:
-        """List all profile IDs."""
-        ...
-    
+    def list_ids(self) -> List[str]: ...
+
     def get(self, profile_id: str) -> Profile:
-        """
-        Load profile or raise ProfileNotFoundError.
-        
-        Args:
-            profile_id: Profile identifier
-            
-        Returns:
-            Profile instance
-            
-        Raises:
-            ProfileNotFoundError: If profile doesn't exist
-        """
+        """Load profile or raise ProfileNotFoundError."""
         profile = self.load(profile_id)
         if profile is None:
             raise ProfileNotFoundError(profile_id)
         return profile
-    
+
     def exists(self, profile_id: str) -> bool:
-        """Check if profile exists."""
         return self.load(profile_id) is not None
 
 
 class FileProfileStore(ProfileStore):
-    """
-    File-based profile storage (JSON files).
-    
-    Suitable for standalone use and testing.
-    For production, implement ProfileStore with your database.
-    """
-    
+    """File-based profile storage (JSON). For testing/standalone use."""
+
     def __init__(self, profiles_dir: Path):
-        """
-        Initialize file store.
-        
-        Args:
-            profiles_dir: Directory for profile JSON files
-        """
         self._dir = Path(profiles_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
     
@@ -173,17 +138,6 @@ class FileProfileStore(ProfileStore):
 
 
 def calculate_threshold(consistency: float, config: Optional[ProfileConfig] = None) -> float:
-    """
-    Calculate optimal similarity threshold from enrollment consistency.
-    
-    Higher consistency = higher threshold (more strict matching).
-    
-    Args:
-        consistency: Enrollment audio consistency score (0-1)
-        config: Profile configuration (uses defaults if not provided)
-        
-    Returns:
-        Similarity threshold
-    """
+    """Map enrollment consistency to similarity threshold. Higher consistency = stricter."""
     cfg = config or ProfileConfig()
     return cfg.calculate_threshold(consistency)
