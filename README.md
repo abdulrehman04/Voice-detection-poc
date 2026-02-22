@@ -2,6 +2,12 @@
 
 ---
 
+# Demo
+[Part 1](https://drive.google.com/file/d/1l03Y2_P68i8Z-jNkEoaCjtIFioiQ2Je4/view?usp=sharing)
+[Part 2](https://drive.google.com/file/d/1akrrMemtQSWvg7jxH_4TXL-SvuLB67PH/view?usp=sharing)
+
+---
+
 # Part 1 — Task Requirements
 
 The task asked to improve the quality, robustness, and speed of the VAD and speaker verification pipeline, with three specific known issues to address. This section describes how each was resolved.
