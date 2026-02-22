@@ -3,8 +3,8 @@
 ---
 
 # Demo
-[Part 1](https://drive.google.com/file/d/1l03Y2_P68i8Z-jNkEoaCjtIFioiQ2Je4/view?usp=sharing)
-[Part 2](https://drive.google.com/file/d/1akrrMemtQSWvg7jxH_4TXL-SvuLB67PH/view?usp=sharing)
+[Part 1](https://www.youtube.com/watch?v=qdySe0pWQ7U)
+[Part 2](https://youtu.be/ajjEWj6icEI)
 
 ---
 
