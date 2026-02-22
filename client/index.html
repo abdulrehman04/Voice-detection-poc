@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speaker Gate PoC</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="main-container">
+        <!-- Left Panel: Controls & Chart -->
+        <div class="left-panel">
+            <div class="header">
+                <h1>Real-Time Speaker Gate</h1>
+                <a href="enroll.html" class="enroll-link">Enrollment →</a>
+            </div>
+            
+            <div class="controls">
+                <input type="text" id="profileId" placeholder="Profile ID (e.g., user123)" value="user123">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="vadOnlyMode">
+                    <span>VAD Only</span>
+                </label>
+                <button id="startBtn">Start</button>
+                <button id="stopBtn" disabled>Stop</button>
+            </div>
+
+            <div class="status-panel">
+                <div class="stat-box">
+                    <div class="stat-label">State</div>
+                    <div id="stateDisplay" class="state-indicator state-unknown">UNKNOWN</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">Similarity</div>
+                    <div id="simValue" class="stat-value">0.00</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">VAD Prob</div>
+                    <div id="vadValue" class="stat-value">0.00</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">Timeout</div>
+                    <div id="timeoutDisplay" class="stat-value timeout-bar-container">
+                        <div class="timeout-bar" id="timeoutBar"></div>
+                        <span id="timeoutValue">--ms</span>
+                    </div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">Status</div>
+                    <div id="connectionStatus" class="stat-value conn-status">Disconnected</div>
+                </div>
+            </div>
+
+            <div id="profilePanel" class="profile-panel" style="display:none;">
+                <div class="profile-header">
+                    <span class="profile-label">Profile</span>
+                    <span id="profileName" class="profile-name">--</span>
+                    <span id="profileSessions" class="profile-sessions">0 sessions</span>
+                    <span id="adaptiveProgress" class="adaptive-progress" title="Adaptive enrollment progress"></span>
+                <button id="clearProfileBtn" class="clear-profile-btn" title="Delete all enrollment sessions">Clear</button>
+                </div>
+                <div id="sessionThresholds" class="session-thresholds"></div>
+            </div>
+
+            <div class="chart-container">
+                <canvas id="simChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Right Panel: Segment History -->
+        <div class="right-panel">
+            <div class="history-header">
+                <h2>Segment History</h2>
+                <span id="segmentCount" class="segment-count">0 segments</span>
+            </div>
+            <div id="segmentsList" class="segments-list">
+                <div class="empty-state">
+                    <span>No segments yet</span>
+                    <small>Start a session and speak to see detected segments</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,612 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f0f2f5;
+    margin: 0;
+    padding: 20px;
+    min-height: 100vh;
+}
+
+/* Main two-column layout */
+.main-container {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+    height: calc(100vh - 40px);
+}
+
+/* Left panel - controls and chart */
+.left-panel {
+    background-color: white;
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    display: flex;
+    flex-direction: column;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.header h1 {
+    color: #1a1a2e;
+    margin: 0;
+    font-size: 1.5em;
+}
+
+.enroll-link {
+    color: #007bff;
+    text-decoration: none;
+    font-size: 0.9em;
+    padding: 6px 12px;
+    border-radius: 6px;
+    transition: background 0.2s;
+}
+
+.enroll-link:hover {
+    background: #e3f2fd;
+}
+
+/* Right panel - segment history */
+.right-panel {
+    background-color: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid #eee;
+}
+
+.history-header h2 {
+    margin: 0;
+    font-size: 1.1em;
+    color: #333;
+}
+
+.segment-count {
+    font-size: 0.85em;
+    color: #666;
+    background: #f5f5f5;
+    padding: 4px 10px;
+    border-radius: 12px;
+}
+
+.segments-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+}
+
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 200px;
+    color: #999;
+    text-align: center;
+}
+
+.empty-state span {
+    font-size: 1em;
+    margin-bottom: 4px;
+}
+
+.empty-state small {
+    font-size: 0.8em;
+    color: #bbb;
+}
+
+/* Legacy container for enrollment page */
+.container {
+    background-color: white;
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    max-width: 800px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+h1 {
+    color: #333;
+    margin-bottom: 20px;
+}
+
+.status-panel {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.stat-box {
+    background: #f8f9fa;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.stat-label {
+    font-size: 0.75em;
+    color: #666;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stat-value {
+    font-size: 1.3em;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+/* Timeout bar visualization */
+.timeout-bar-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.timeout-bar {
+    flex: 1;
+    height: 8px;
+    background: linear-gradient(to right, #28a745 0%, #ffc107 50%, #dc3545 100%);
+    border-radius: 4px;
+    position: relative;
+    min-width: 60px;
+}
+
+.timeout-bar::after {
+    content: '';
+    position: absolute;
+    width: 3px;
+    height: 14px;
+    background: #333;
+    border-radius: 2px;
+    top: 50%;
+    transform: translateY(-50%);
+    left: var(--timeout-position, 50%);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    transition: left 0.2s ease;
+}
+
+#timeoutValue {
+    font-size: 0.85em;
+    font-weight: 600;
+    min-width: 50px;
+    text-align: right;
+}
+
+.conn-status {
+    font-size: 0.95em !important;
+}
+
+.state-indicator {
+    padding: 8px;
+    text-align: center;
+    border-radius: 5px;
+    font-weight: bold;
+    font-size: 0.9em;
+}
+
+.state-unknown {
+    background-color: #e2e3e5;
+    color: #383d41;
+}
+
+.state-pending {
+    background-color: #fff3cd;
+    color: #856404;
+    animation: pulse 1s infinite;
+}
+
+.state-user {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.state-vad-speech {
+    background-color: #e1bee7;
+    color: #6a1b9a;
+}
+
+.state-trailing {
+    background-color: #cce5ff;
+    color: #004085;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+button {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.95em;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+button:hover {
+    background-color: #0056b3;
+    transform: translateY(-1px);
+}
+
+button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* Profile info panel */
+.profile-panel {
+    background: #f0f4ff;
+    border: 1px solid #c8d6f0;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+}
+
+.profile-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.profile-label {
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #666;
+    font-weight: 600;
+}
+
+.profile-name {
+    font-weight: 600;
+    color: #1a1a2e;
+    font-size: 0.95em;
+}
+
+.profile-sessions {
+    font-size: 0.8em;
+    color: #fff;
+    background: #5c6bc0;
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+.adaptive-progress {
+    font-size: 0.75em;
+    color: #666;
+    margin-left: auto;
+}
+
+.clear-profile-btn {
+    font-size: 0.7em;
+    padding: 3px 10px;
+    background: #ef5350;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.clear-profile-btn:hover {
+    background: #c62828;
+}
+
+.session-thresholds {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+
+.session-tag {
+    font-size: 0.7em;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: #e8eaf6;
+    color: #3949ab;
+    border: 1px solid #c5cae9;
+}
+
+.session-tag.active {
+    background: #c8e6c9;
+    color: #2e7d32;
+    border-color: #a5d6a7;
+}
+
+.session-tag.new {
+    animation: sessionPulse 2s ease-out;
+}
+
+@keyframes sessionPulse {
+    0% { background: #fff9c4; border-color: #f9a825; }
+    100% { background: #e8eaf6; border-color: #c5cae9; }
+}
+
+/* Segment similarity info */
+.segment-similarity {
+    font-size: 0.72em;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    background: #f0f4ff;
+    border-radius: 6px;
+    padding: 6px 8px;
+    margin-bottom: 8px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.sim-item {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.sim-label {
+    color: #666;
+}
+
+.sim-value {
+    font-weight: 600;
+    color: #1a1a2e;
+}
+
+.sim-value.good {
+    color: #2e7d32;
+}
+
+.chart-container {
+    flex: 1;
+    min-height: 200px;
+    margin-top: 8px;
+    position: relative;
+}
+
+.chart-container canvas {
+    width: 100% !important;
+    height: 100% !important;
+    background: #fafafa;
+    border-radius: 8px;
+}
+
+.controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    align-items: center;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9em;
+    color: #555;
+    cursor: pointer;
+    white-space: nowrap;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: #f5f5f5;
+    transition: background 0.2s;
+}
+
+.checkbox-label:hover {
+    background: #e8e8e8;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+input[type="text"] {
+    padding: 10px 14px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    flex-grow: 1;
+    font-size: 0.95em;
+}
+
+input[type="text"]:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+}
+
+/* Segment item styling */
+.segment-item {
+    background: #f8fffe;
+    border: 1px solid #e0f2f1;
+    border-left: 3px solid #26a69a;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 10px;
+    transition: all 0.2s;
+}
+
+.segment-item.vad-only-segment {
+    background: #faf5ff;
+    border: 1px solid #e1bee7;
+    border-left: 3px solid #9c27b0;
+}
+
+.segment-item:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.segment-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.segment-number {
+    font-weight: 600;
+    color: #26a69a;
+    font-size: 0.95em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.vad-only-segment .segment-number {
+    color: #9c27b0;
+}
+
+.mode-badge {
+    font-size: 0.7em;
+    font-weight: 500;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+}
+
+.mode-badge.vad-only {
+    background: #e1bee7;
+    color: #6a1b9a;
+}
+
+.segment-badge {
+    font-size: 0.75em;
+    color: #fff;
+    background: #26a69a;
+    padding: 3px 8px;
+    border-radius: 10px;
+}
+
+.vad-only-segment .segment-badge {
+    background: #9c27b0;
+}
+
+.segment-time {
+    font-size: 0.75em;
+    color: #888;
+}
+
+/* Timeline styling */
+.segment-timeline {
+    font-size: 0.72em;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    background: #fafafa;
+    border-radius: 6px;
+    padding: 8px;
+    margin-bottom: 8px;
+}
+
+.timeline-row {
+    display: grid;
+    grid-template-columns: 80px 1fr auto;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    align-items: center;
+}
+
+.timeline-row:not(:last-child) {
+    border-bottom: 1px dashed #e0e0e0;
+}
+
+.timeline-row.fast {
+    background: #e8f5e9;
+}
+
+.timeline-row.slow {
+    background: #fff3e0;
+}
+
+.event-name {
+    color: #666;
+    font-weight: 500;
+}
+
+.event-time {
+    color: #333;
+}
+
+.event-delta {
+    color: #888;
+    font-size: 0.9em;
+}
+
+.event-delta.delay {
+    color: #ef6c00;
+    font-weight: 600;
+}
+
+.timeline-row.fast .event-delta {
+    color: #2e7d32;
+}
+
+.segment-audio {
+    margin-top: 8px;
+}
+
+.segment-audio audio {
+    width: 100%;
+    height: 32px;
+}
+
+/* Responsive */
+@media (max-width: 1000px) {
+    .main-container {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+    
+    .right-panel {
+        max-height: 400px;
+    }
+    
+    .status-panel {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* Enrollment status messages */
+.status-success {
+    color: #28a745;
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+    padding: 12px 16px;
+    border-radius: 8px;
+}
+
+.status-error {
+    color: #dc3545;
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    padding: 12px 16px;
+    border-radius: 8px;
+}
