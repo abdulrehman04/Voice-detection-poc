@@ -307,6 +307,8 @@ class SpeakerGate:
             self._ctx.vad_started_at = now
             self._ctx.segment = list(self._pre_buffer) + list(chunk)
             self._ctx.matches = self._ctx.mismatches = 0
+            self._ctx.best_speech_sim = 0.0
+            self._ctx.sim_history = []
         return None
     
     def _on_pending(self, chunk, is_speech, now) -> Optional[_SegmentResult]:
@@ -328,19 +330,7 @@ class SpeakerGate:
             is_short_utterance = speech_dur < cfg.short_utterance_sec
             
             if is_short_utterance and is_recent_user:
-                # Use best score from active speech (tail audio is diluted with silence)
-                sim = self._ctx.best_speech_sim if self._ctx.best_speech_sim > 0 else self._check_similarity()
-                if sim is not None and sim > 0 and sim < self._sim_exit:
-                    log.debug(f"Short utterance rejected: sim={sim:.3f} < exit={self._sim_exit:.3f}")
-                    if self._ctx.speech_dur >= cfg.pending_grace_sec:
-                        self._ctx.state = GateState.UNKNOWN
-                        self._ctx.segment = []
-                        self._ctx.last_confirmed = "OTHER"
-                    else:
-                        self._ctx.state = GateState.UNKNOWN
-                        self._ctx.segment = []
-                    return None
-                log.debug(f"Short utterance ({speech_dur:.2f}s) approved (recent user {time_since_user:.1f}s ago, sim={sim})")
+                log.debug(f"Short utterance ({speech_dur:.2f}s) auto-approved (recent user {time_since_user:.1f}s ago)")
                 self._ctx.state = GateState.TRAILING
                 self._ctx.last_confirmed = "USER"
                 self._ctx.user_confirmed_at = now
@@ -369,9 +359,7 @@ class SpeakerGate:
                 self._ctx.segment = []
             return None
         
-        # Skip similarity checks during silence — tail audio is diluted with silence
-        # and produces garbage scores that poison counters and history
-        if self._should_embed(now) and self._ctx.silence_dur < 0.3:
+        if self._should_embed(now):
             sim = self._check_similarity()
             if sim is not None:
                 self._update_counters(sim)
@@ -513,10 +501,43 @@ class SpeakerGate:
         return (len(self._ctx.segment) >= self._embed_samples and 
                 now - self._ctx.last_embed_time > self._config.embed_interval_sec)
     
+    def _get_embed_audio(self) -> Optional[np.ndarray]:
+        """Get the best 1.6s window from the segment for embedding.
+        During active speech, uses the tail (freshest audio).
+        During silence, centers the window on the speech portion."""
+        seg = self._ctx.segment
+        seg_len = len(seg)
+
+        if seg_len < self._embed_samples:
+            return None
+
+        # During active speech, tail is the freshest speech — use it
+        if self._ctx.silence_dur < 0.1:
+            return np.array(seg[-self._embed_samples:], dtype=np.float32)
+
+        # During silence, center the window on the speech portion
+        sr = self._config.sample_rate
+        pre_samples = int(self._config.pre_buffer_sec * sr)
+        speech_samples = int(self._ctx.speech_dur * sr)
+
+        if speech_samples <= 0:
+            return np.array(seg[-self._embed_samples:], dtype=np.float32)
+
+        speech_center = pre_samples + speech_samples // 2
+        win_start = max(0, speech_center - self._embed_samples // 2)
+        win_end = win_start + self._embed_samples
+        if win_end > seg_len:
+            win_end = seg_len
+            win_start = max(0, win_end - self._embed_samples)
+
+        return np.array(seg[win_start:win_end], dtype=np.float32)
+
     def _check_similarity(self) -> Optional[float]:
         if self._profile is None:
             return None
-        audio = np.array(self._ctx.segment[-self._embed_samples:], dtype=np.float32)
+        audio = self._get_embed_audio()
+        if audio is None:
+            return None
 
         # Multi-session: compare against all refs, use best match's threshold
         if len(self._profile_refs) > 1:

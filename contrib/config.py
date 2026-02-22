@@ -40,13 +40,13 @@ class ContribSettings(BaseSettings):
     embed_window_sec: float = 1.6
     embed_interval_sec: float = 0.2
     embed_prefix_sec: float = 1.6
-    embed_suffix_sec: float = 5.0
+    embed_suffix_sec: float = 10.0
     pending_grace_sec: float = 0.3
     max_segment_sec: float = 30.0
     default_threshold: float = 0.69
     sim_hysteresis: float = 0.07
     trailing_resume_max: float = 0.8
-    enter_count: int = 2
+    enter_count: int = 1
     exit_count: int = 2
     
     # Stats (POC only)

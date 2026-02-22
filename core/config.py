@@ -38,7 +38,7 @@ class GateConfig:
     embed_window_sec: float = 1.6         # Resemblyzer requires 1.6s
     embed_interval_sec: float = 0.2
     embed_prefix_sec: float = 1.6
-    embed_suffix_sec: float = 3.0         # Grace period for short followups
+    embed_suffix_sec: float = 10.0        # Grace period for short followups
     pending_grace_sec: float = 0.3
     max_segment_sec: float = 30.0
 
@@ -50,7 +50,7 @@ class GateConfig:
     trailing_resume_max: float = 0.8
 
     # Match counting
-    enter_count: int = 2
+    enter_count: int = 1
     exit_count: int = 2
 
 
