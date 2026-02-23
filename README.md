@@ -4,8 +4,7 @@
 
 # Demo
 
-## Video 1
-Multiple enrollments in action (Different enrollments for different moods/states (e.g sleepy, early morning, angry etc.) of the same user for better recognition)
+## Video 1 - Multiple enrollments in action (Different enrollments for different moods/states (e.g sleepy, early morning, angry etc.) of the same user for better recognition)
 [![Watch Part 1 Demo](https://img.youtube.com/vi/qdySe0pWQ7U/0.jpg)](https://www.youtube.com/watch?v=qdySe0pWQ7U)
 
 ## Video 2
